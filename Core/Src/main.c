@@ -22,6 +22,7 @@
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
+#include "gps.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -49,14 +50,16 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-char string[5];
+char cmd_buf[256] = {0};				// received gps command
+char *cmd_begin = cmd_buf;
+char send_buf[256] = {0};				// send to mqtt
+char display_buf[4] = {'\0'};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-void init_screen();
-void show_counter();
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -96,11 +99,32 @@ int main(void)
   MX_I2C1_Init();
   MX_TIM2_Init();
   MX_USART1_UART_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 
   SSD1306_Init();
-  init_screen();
+  //init_screen();
+
+  HAL_Delay(5000);
+
+  send_cmd("AT+CWMODE=3\r\n", strlen("AT+CWMODE=3\r\n"), "AT+CWMODE OK");
+  HAL_Delay(4000);
+  memset(send_buf, 0, 256);
+
+  send_cmd("AT+CWJAP=\"{ssd}\",\"{password}\"\r\n", strlen("AT+CWJAP=\"{ssd}\",\"{password}\"\r\n"), "AT+CWJAP");
+  HAL_Delay(4000);
+  memset(send_buf, 0, 256);
+
+  send_cmd("AT+MQTTUSERCFG=0,1,\"123cli\",\"\",\"\",0,0,\"\"\r\n", strlen("AT+MQTTUSERCFG=0,1,\"123cli\",\"\",\"\",0,0,\"\"\r\n"), "AT+MQTTUSERCFG");
+  HAL_Delay(4000);
+  memset(send_buf, 0, 256);
+
+  send_cmd("AT+MQTTCONN=0,\"test.mosquitto.org\",1883,1\r\n", strlen("AT+MQTTCONN=0,\"test.mosquitto.org\",1883,1\r\n"), "AT+MQTTCONN");
+  HAL_Delay(4000);
+  memset(send_buf, 0, 256);
+
+  HAL_UART_Receive_IT(&huart1, (uint8_t*)rx_buf, 1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -108,7 +132,23 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-	show_counter();
+    if (rx_buf[0] == '\r') {
+      char *start = cmd_buf;
+      memcpy(display_buf, start + 3, 3);
+      SSD1306_Clear();
+      SSD1306_GotoXY (0,0);
+      SSD1306_Puts (display_buf, &Font_11x18, 1);
+      SSD1306_UpdateScreen();
+      memset(display_buf, 0, 4);
+
+      send_cmd("AT+MQTTPUB=0,\"qin_test\",\"hello\",0,0\r\n", strlen("AT+MQTTPUB=0,\"qin_test\",\"hello\",0,0\r\n"), "AT+MQTTPUB");
+      HAL_Delay(2000);
+      memset(send_buf, 0, 256);
+
+      cmd_begin = cmd_buf;
+      memset(cmd_buf, 0, 256);
+      HAL_UART_Receive_IT(&huart1, (uint8_t*)rx_buf, 1);
+    }
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -154,43 +194,21 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-void init_screen() {
-  SSD1306_GotoXY (0,0);
-  SSD1306_Puts ("SSD1306", &Font_11x18, 1);
-  SSD1306_GotoXY (0, 30);
-  SSD1306_Puts ("OLED DEMO", &Font_11x18, 1);
-  SSD1306_UpdateScreen();
-  HAL_Delay (1000);
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+  if (huart->Instance == USART1) {
+	if  (rx_buf[0] == '$') {
+	  cmd_begin = cmd_buf;
+	  *cmd_begin = rx_buf[0];
+	  cmd_begin++;
+	  HAL_UART_Receive_IT(&huart1, (uint8_t*)rx_buf, 1);
+	  return;
+	}
 
-  SSD1306_ScrollRight(0,5);
-  HAL_Delay(3000);
-  SSD1306_ScrollLeft(0,5);
-  HAL_Delay(3000);
-  SSD1306_Stopscroll();
-  SSD1306_Clear();
-  SSD1306_GotoXY (30,0);
-  SSD1306_Puts ("COUNTER", &Font_11x18, 1);
-}
-
-void show_counter() {
-  for (int num = 1;num <= 1000;num++)
-  {
-    itoa(num,string, 10);
-    SSD1306_GotoXY (0, 30);
-    SSD1306_Puts ("             ", &Font_16x26, 1);
-    SSD1306_UpdateScreen();
-    if (num < 10) {
-	  SSD1306_GotoXY (53, 30);  // 1 DIGIT
-    }
-    else if (num < 100) {
-	  SSD1306_GotoXY (45, 30);  // 2 DIGITS
-    }
-    else  {
-	  SSD1306_GotoXY (37, 30);  // 3 DIGITS
-    }
-    SSD1306_Puts (string, &Font_16x26, 1);
-    SSD1306_UpdateScreen();
-    HAL_Delay (500);
+	if (rx_buf[0] != '\r' && (cmd_begin - cmd_buf < 256)) {
+	  *cmd_begin = rx_buf[0];
+	  cmd_begin++;
+	  HAL_UART_Receive_IT(&huart1, (uint8_t*)rx_buf, 1);
+	}
   }
 }
 /* USER CODE END 4 */
