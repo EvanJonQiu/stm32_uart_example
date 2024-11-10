@@ -22,11 +22,11 @@
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
-#include "gps.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "ssd1306.h"
+#include "gps.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -132,23 +132,7 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-    if (rx_buf[0] == '\r') {
-      char *start = cmd_buf;
-      memcpy(display_buf, start + 3, 3);
-      SSD1306_Clear();
-      SSD1306_GotoXY (0,0);
-      SSD1306_Puts (display_buf, &Font_11x18, 1);
-      SSD1306_UpdateScreen();
-      memset(display_buf, 0, 4);
 
-      send_cmd("AT+MQTTPUB=0,\"qin_test\",\"hello\",0,0\r\n", strlen("AT+MQTTPUB=0,\"qin_test\",\"hello\",0,0\r\n"), "AT+MQTTPUB");
-      HAL_Delay(2000);
-      memset(send_buf, 0, 256);
-
-      cmd_begin = cmd_buf;
-      memset(cmd_buf, 0, 256);
-      HAL_UART_Receive_IT(&huart1, (uint8_t*)rx_buf, 1);
-    }
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
